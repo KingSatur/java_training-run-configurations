@@ -1,0 +1,60 @@
+@startuml diagram
+!include  https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!define ICONURL https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v2.4.0
+!define DEVICONS https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/master/devicons
+!define DEVICONS2 https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/master/devicons2
+!define FONTAWESOME https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/master/font-awesome-5
+!include DEVICONS2/angularjs.puml
+!include DEVICONS2/postgresql_wordmark.puml
+!include DEVICONS2/mongodb_wordmark.puml
+!include DEVICONS2/spring_wordmark.puml
+!include FONTAWESOME/users.puml
+
+
+LAYOUT_TOP_DOWN()
+
+
+Person(user, "Customer", "People that need products", $sprite="users")
+Container(bookManagementWeb, "bookManagementWeb", "angular", "The main interface that the customer interacts with", $sprite="angularjs")
+Container(configServer, "CONFIG SERVER", "spring", "Provides the required configuration files for each service", $sprite="spring_wordmark")
+Container(eureka, "EUREKA SERVER", "java", "Provides service discovery", $sprite="spring_wordmark")
+Container(ratingService, "RATING SERVICE", "java", "Provides the data related with book ratings", $sprite="spring_wordmark")
+Container(bookService, "BOOK SERVICE", "java", "Provides the data related with books management", $sprite="spring_wordmark")
+Container(apiGateway, "API GATEWAY", "java", "Api gateway to handle cross-related concerns", $sprite="spring_wordmark")
+Container(bff, "Book management bff", "java", "Back for fronted to book management", $sprite="spring_wordmark")
+ContainerDb(bookDatabase, "Books", "Postgresql", "Database where books data will be stored", $sprite="postgresql_wordmark")
+ContainerDb(ratingDatabase, "Ratings", "Mongodb", "Database where asociated book ratings will be stored", $sprite="mongodb_wordmark")
+ContainerDb(grafana, "Grafana", "Grafana", "Dashboard to provide information about services health")
+ContainerDb(keycloak, "Keycloak", "Keycloak", "Authorization server")
+ContainerDb(prometheus, "Prometheus", "Prometheus", "Provides ui application to monitor services health")
+ContainerDb(zipkin, "Zipkin", "Zipkin", "Provides ui applicaiton to monitor transaction trazability across all services")
+
+Rel(user, bookManagementWeb, "Uses")
+Rel(bookManagementWeb, apiGateway, "Uses")
+Rel(grafana, prometheus, "Fetch metrics from")
+Rel(prometheus, bookService, "pulls data from actuator endppoints")
+Rel(prometheus, ratingService, "pulls data from actuator endppoints")
+Rel(prometheus, bff, "pulls data from actuator endppoints")
+Rel(ratingService, configServer, "Retrieves config files")
+Rel(ratingService, eureka, "Register instance on")
+Rel(ratingService, keycloak, "Validate token against")
+Rel_Down(ratingService, ratingDatabase, "Reads/Writes")
+Rel(ratingService, zipkin, "segregates span and trace id to")
+Rel(bookService, configServer, "Retrieves config files")
+Rel(bookService, eureka, "Register instance on")
+Rel_U(bookService, keycloak, "Validate token against")
+Rel(bookService, zipkin, "segregates span and trace id to")
+Rel_Down(bookService, bookDatabase, "Reads/Writes")
+Rel(apiGateway, configServer, "Retrieves config files")
+Rel(apiGateway, eureka, "Register instance on")
+Rel(apiGateway, zipkin, "segregates span and trace id to")
+Rel(apiGateway, bff, "Uses", "HTTPS")
+Rel_U(apiGateway, keycloak, "Validate token against")
+Rel(bff, configServer, "Retrieves config files")
+Rel(bff, eureka, "Register instance on")
+Rel(bff, zipkin, "segregates span and trace id to")
+Rel_L(bff, keycloak, "Validate token against")
+Rel(bff, bookService, "Uses", "HTTPS")
+Rel(bff, ratingService, "Uses", "HTTPS")
+
+@enduml

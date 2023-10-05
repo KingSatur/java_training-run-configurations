@@ -1,0 +1,272 @@
+version: "3.8"
+
+services:
+  grafana:
+    image: "grafana/grafana:latest"
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    networks:
+      - java_training
+    depends_on:
+      - prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - java_training
+  zipkin:
+    image: openzipkin/zipkin
+    mem_limit: 700m
+    ports:
+      - "9411:9411"
+    networks:
+      - java_training
+  configserver:
+    image: java_training/configserver
+    mem_limit: 700m
+    ports:
+      - "8071:8071"
+    networks:
+      - java_training
+    environment:
+      - management.endpoints.web.exposure.include=*
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - spring.cloud.config.server.git.uri=${GIT_REPOSITORY_URL}
+      - spring.cloud.config.server.git.clone-on-start=true
+      - spring.cloud.config.server.git.default-label=main
+      - server.port=8071
+      - encrypt.key=0i2lmae2jo3
+      - spring.sleuth.sampler.percentage=1
+      - logging.level.ROOT=INFO
+      - logging.level.org.springframework.cloud.config=DEBUG
+  eurekaserver:
+    image: java_training/eurekaserver
+    mem_limit: 700m
+    ports:
+      - "10090:10090"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - zipkin
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 80s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - management.endpoints.web.exposure.include=*
+      - spring.profiles.active=dev
+      - server.port=10090
+      - eureka.username=${EUREKA_USERNAME}
+      - eureka.password=${EUREKA_PASSWORD}
+      - eureka.instance.hostname=eurekaserver
+      - eureka.client.register-with-eureka=false
+      - eureka.client.fetch-registry=false
+  books:
+    image: java_training/books
+    container_name: books
+    mem_limit: 700m
+    ports:
+      - "10050:10050"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 50s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=10050
+      - spring.jpa.hibernate.ddl-auto=update
+      - spring.jpa.show-sql=true
+      - spring.config.import=configserver:http://configserver:8071
+      - management.info.env.enabled=true
+      - management.endpoint.shutdown.enabled=true
+      - management.endpoint.metrics.enabled=true
+      - management.endpoints.web.exposure.include=*
+  books-second:
+    container_name: books-second
+    image: java_training/books
+    mem_limit: 700m
+    ports:
+      - "10051:10051"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 50s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=10051
+      - spring.jpa.hibernate.ddl-auto=update
+      - spring.jpa.show-sql=true
+      - spring.config.import=configserver:http://configserver:8071
+      - management.info.env.enabled=true
+      - management.endpoint.shutdown.enabled=true
+      - management.endpoint.metrics.enabled=true
+      - management.endpoints.web.exposure.include=*
+  apigateway:
+    container_name: apigateway
+    image: java_training/api-gateway
+    mem_limit: 700m
+    ports:
+      - "8072:8072"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+      - zipkin
+      - books
+      - rating
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 260s
+        max_attempts: 5
+        window: 1000s
+    environment:
+      - management.endpoints.web.exposure.include=*
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=8072
+      - spring.config.import=configserver:http://configserver:8071
+  book-database:
+    container_name: book-database
+    image: postgres:14
+    ports:
+      - 5450:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: books
+    networks:
+      - java_training
+  rating-database:
+    container_name: rating-database
+    image: mongo:5
+    restart: always
+    ports:
+      - 27018:27017
+    environment:
+      MONGODB_DATABASE: rating_reactive
+    volumes:
+      - ./mongo:/data/database
+    networks:
+      - java_training
+  rating:
+    container_name: rating
+    image: java_training/rating
+    mem_limit: 700m
+    ports:
+      - "11340:11340"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 100s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=11340
+      - spring.config.import=configserver:http://configserver:8071
+      - management.info.env.enabled=true
+      - management.endpoint.shutdown.enabled=true
+      - management.endpoint.metrics.enabled=true
+      - management.endpoints.web.exposure.include=*
+  rating-second:
+    container_name: rating-second
+    image: java_training/rating
+    mem_limit: 700m
+    ports:
+      - "11341:11341"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 100s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=11341
+      - spring.config.import=configserver:http://configserver:8071
+      - management.info.env.enabled=true
+      - management.endpoint.shutdown.enabled=true
+      - management.endpoint.metrics.enabled=true
+      - management.endpoints.web.exposure.include=*
+  bff:
+    container_name: bff
+    image: java_training/book-management-bff
+    mem_limit: 700m
+    ports:
+      - "20120:20210"
+    networks:
+      - java_training
+    depends_on:
+      - configserver
+      - eurekaserver
+      - rating
+      - books
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 100s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - management.info.env.enabled=true
+      - management.endpoint.shutdown.enabled=true
+      - management.endpoint.metrics.enabled=true
+      - management.endpoints.web.exposure.include=*
+      - server.servlet.context-path=/book-management-bff
+      - spring.profiles.active=dev
+      - spring.zipkin.baseUrl=http://zipkin:9411/
+      - server.port=20210
+      - spring.config.import=configserver:http://configserver:8071
+  frontend:
+    image: java_training/web-management
+    container_name: web-management
+    networks:
+      - java_training
+    ports:
+      - "4200:80"
+    depends_on:
+      - apigateway
+      - bff
+networks:
+  java_training:
